@@ -1,0 +1,11 @@
+{
+  "projectName": "Simple Llm Service",
+  "packageJsonPath": ".",
+  "ghcrOrg": "mchen-lab",
+  "dockerHubUser": "xychenmsn",
+  "imageName": "simple-llm-service",
+  "containerName": "simple-llm-service",
+  "volumeName": "simple_llm_service_data",
+  "ports": [31160, 31161],
+  "allowedProcesses": ["node", "python"]
+}
