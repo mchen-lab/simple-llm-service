@@ -13,10 +13,10 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # CONFIGURATION (populated from devops.config.json)
 # ============================================================================
 # All ports to kill on restart
-KILL_PORTS="31160 31161"
+KILL_PORTS="31160"
 
 # Allowed process names to kill (regex pattern for matching)
-ALLOWED_PROCESSES="node|python"
+ALLOWED_PROCESSES="node"
 
 # ============================================================================
 # HELPER FUNCTIONS

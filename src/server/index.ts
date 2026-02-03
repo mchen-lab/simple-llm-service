@@ -3,9 +3,10 @@ import { Request, Response } from "express";
 import express from "express";
 import axios from "axios";
 import path from "path";
+import { createServer } from "http";
 import { fileURLToPath } from "url";
 import { initDb, logCall, getLogs, countLogs, getUniqueTags } from "./db.js";
-import { pythonManager } from "./pythonManager.js";
+import { llmService } from "./llmManager.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -50,7 +51,7 @@ let globalConfig = appKit.config as GlobalConfig;
 // Initialize DB
 initDb();
 
-const PYTHON_SERVICE_URL = "http://localhost:31161";
+// Python service removed in favor of direct Node.js implementation
 
 // 3. API Routes
 
@@ -120,58 +121,61 @@ app.get("/api/logs/tags", (_req: Request, res: Response) => {
     }
 });
 
-// Generate API - Proxy to Python
+// Generate API - Direct Node.js Implementation
 app.post("/api/generate", async (req: Request, res: Response) => {
     const startTime = Date.now();
-    const { model, prompt, response_format, schema, tag } = req.body;
+    const { model, prompt, response_format, schema, tag, mode } = req.body;
     
-    // Inject current providers config into the request to python 
-    // OR python service reads settings.json independently.
-    // Plan says "Receives necessary config/keys via request".
-    // Let's pass the relevant provider config.
-    
-    let activeProviderConfig = {};
-    const providerName = model.split(":")[0];
-    if (globalConfig.providers[providerName]) {
-        activeProviderConfig = globalConfig.providers[providerName];
-    } else {
-        // Default to openrouter if no prefix match or defined
-         activeProviderConfig = globalConfig.providers['openrouter'] || {};
-    }
-
-    // NOTE: simple-llm logic was: if provider in providers, use it. else openrouter.
-    // We will let Python service handle specific logic, but we pass the *entire* providers map
-    // so it can resolve it same as before.
-    
-    const payload = {
-        model,
-        prompt,
-        response_format,
-        schema,
-        tag,
-        providers: (appKit.config as GlobalConfig).providers // Pass config to python
-    };
-
     try {
-        const response = await axios.post(`${PYTHON_SERVICE_URL}/generate`, payload);
-        const data = response.data;
+        // Call the internal Node.js service directly
+        const result = await llmService.generate({
+            model: model || 'gpt-4o',
+            prompt: prompt,
+            response_format: response_format,
+            schema: schema,
+            mode: mode || 'auto',  // auto, json, tools
+            providers: (appKit.config as GlobalConfig).providers
+        });
+
+        const duration_ms = Date.now() - startTime;
         
+        if (result.status === 'error') {
+             // Log error
+            logCall({
+                model,
+                prompt,
+                response: null,
+                duration_ms,
+                error: result.error || null,
+                metadata: { format: response_format, schema },
+                response_meta: null,
+                tag
+            });
+            return res.status(500).json({ detail: result.error });
+        }
+
         // Log success
         logCall({
             model,
             prompt,
-            response: data, // The actual result
-            duration_ms: Date.now() - startTime,
+            response: result.data, 
+            duration_ms,
             error: null,
             metadata: { format: response_format, schema },
+            response_meta: result.response_meta,
             tag
         });
         
-        res.json(data);
-    } catch (e: any) {
-        const errorMsg = e.response?.data?.detail || e.message;
+        // Return structured response with response_meta if available (gen_dict)
+        if (result.response_meta) {
+            res.json({ data: result.data, response_meta: result.response_meta });
+        } else {
+            // gen_text - return data directly for backward compatibility
+            res.json(result.data);
+        }
         
-        // Log error
+    } catch (e: any) {
+        const errorMsg = e.message || "Internal Server Error";
         logCall({
             model,
             prompt,
@@ -179,10 +183,10 @@ app.post("/api/generate", async (req: Request, res: Response) => {
             duration_ms: Date.now() - startTime,
             error: errorMsg,
             metadata: { format: response_format, schema },
+            response_meta: null,
             tag
         });
-        
-        res.status(e.response?.status || 500).json({ detail: errorMsg });
+        res.status(500).json({ detail: errorMsg });
     }
 });
 
@@ -190,10 +194,13 @@ app.post("/api/generate", async (req: Request, res: Response) => {
 async function start() {
     await appKit.initialize();
     
-    // Start Python Service
-    pythonManager.start();
+    // Start Node.js LLM Service
+    await llmService.start();
     
     const PORT = process.env.PORT || 31160;
+    
+    // Create HTTP server (allows sharing with Vite HMR WebSocket)
+    const server = createServer(app);
 
     // Frontend Serving Logic
     if (isProduction) {
@@ -209,6 +216,7 @@ async function start() {
             const viteServer = await vite.createServer({
                 server: {
                     middlewareMode: true,
+                    hmr: { server },  // Share the HTTP server for HMR WebSocket
                 },
                 appType: "spa",
                 root: frontendDir,
@@ -228,7 +236,7 @@ async function start() {
         }
     }
 
-    app.listen(Number(PORT), "0.0.0.0", () => {
+    server.listen(Number(PORT), "0.0.0.0", () => {
         console.log(`Node Server running on port ${PORT}`);
     });
 }

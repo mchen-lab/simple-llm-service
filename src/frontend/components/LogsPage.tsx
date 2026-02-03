@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import api from "@/lib/api";
-import { Eye, Trash2, Pin, RotateCw } from "lucide-react";
+import { Eye, Trash2, Pin, RotateCw, FileText, FileCode, Copy, Check } from "lucide-react";
+import Markdown from "react-markdown";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { LogFilterBar } from "./LogFilterBar";
 
 interface LogEntry {
@@ -32,6 +34,7 @@ interface LogEntry {
   duration_ms: number;
   error?: string;
   metadata?: any;
+  response_meta?: any;
   locked: boolean;
   tag?: string | null;
 }
@@ -73,6 +76,12 @@ export default function LogsPage({
   
   // Delete confirm state
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  
+  // Response view mode state (md = markdown, plain = plain text)
+  const [responseViewMode, setResponseViewMode] = useState<"md" | "plain">("plain");
+  // Copy hooks for visual feedback
+  const [promptCopied, copyPrompt] = useCopyToClipboard();
+  const [responseCopied, copyResponse] = useCopyToClipboard();
 
   const fetchLogs = useCallback(async (pageNum: number) => {
     setLoading(true);
@@ -302,7 +311,7 @@ export default function LogsPage({
 
       {/* Log Detail Modal */}
       <Dialog open={!!selectedLog} onOpenChange={(open: boolean) => !open && setSelectedLog(null)}>
-        <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col p-0 overflow-hidden">
+        <DialogContent className="w-full h-full max-w-full max-h-full sm:max-w-4xl sm:max-h-[85vh] flex flex-col p-0 overflow-hidden">
           <DialogHeader className="px-6 pt-6 pb-3 border-b">
             <DialogTitle className="flex items-center justify-between">
               <span>Log Detail</span>
@@ -319,26 +328,83 @@ export default function LogsPage({
           <div className="flex-1 overflow-auto px-6 py-4 space-y-4">
             {/* Prompt Box */}
             <div className="space-y-2">
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Prompt</span>
-              <div className="bg-muted/30 p-3 rounded-lg border font-mono text-sm whitespace-pre-wrap max-h-48 overflow-auto">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Prompt</span>
+                <button
+                  onClick={() => copyPrompt(selectedLog?.prompt || "")}
+                  className="p-1 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
+                  title="Copy prompt"
+                >
+                  {promptCopied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+                </button>
+              </div>
+              <div className="bg-muted/30 p-3 rounded-lg border font-mono text-sm whitespace-pre-wrap">
                 {selectedLog?.prompt}
               </div>
             </div>
 
             {/* Response/Error Box */}
             <div className="space-y-2">
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                {selectedLog?.error ? 'Error' : 'Response'}
-              </span>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    {selectedLog?.error ? 'Error' : 'Response'}
+                  </span>
+                  <button
+                    onClick={() => {
+                      const content = selectedLog?.error 
+                        ? selectedLog.error 
+                        : (typeof selectedLog?.response === 'string' ? selectedLog.response : JSON.stringify(selectedLog?.response, null, 2));
+                      copyResponse(content || "");
+                    }}
+                    className="p-1 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
+                    title="Copy response"
+                  >
+                    {responseCopied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+                {!selectedLog?.error && (
+                  <div className="flex items-center gap-1 bg-muted/50 rounded-md p-0.5">
+                    <button
+                      onClick={() => setResponseViewMode("md")}
+                      className={cn(
+                        "p-1.5 rounded text-xs flex items-center gap-1 transition-colors",
+                        responseViewMode === "md" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                      )}
+                      title="Markdown view"
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">MD</span>
+                    </button>
+                    <button
+                      onClick={() => setResponseViewMode("plain")}
+                      className={cn(
+                        "p-1.5 rounded text-xs flex items-center gap-1 transition-colors",
+                        responseViewMode === "plain" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                      )}
+                      title="Plain text view"
+                    >
+                      <FileCode className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Plain</span>
+                    </button>
+                  </div>
+                )}
+              </div>
               <div className={cn(
-                "p-3 rounded-lg border font-mono text-sm whitespace-pre-wrap max-h-64 overflow-auto",
-                selectedLog?.error ? "bg-destructive/5 text-destructive border-destructive/20" : "bg-muted/30"
+                "p-3 rounded-lg border text-sm",
+                selectedLog?.error ? "bg-destructive/5 text-destructive border-destructive/20 font-mono whitespace-pre-wrap" : "bg-muted/30"
               )}>
                 {selectedLog?.error ? (
                   selectedLog.error
+                ) : responseViewMode === "md" ? (
+                  <div className="prose prose-sm dark:prose-invert max-w-none">
+                    <Markdown>
+                      {typeof selectedLog?.response === 'string' ? selectedLog.response : JSON.stringify(selectedLog?.response, null, 2)}
+                    </Markdown>
+                  </div>
                 ) : (
                   <div 
-                    className="syntax-highlight"
+                    className="font-mono whitespace-pre-wrap syntax-highlight"
                     dangerouslySetInnerHTML={{ 
                       __html: syntaxHighlight(typeof selectedLog?.response === 'string' ? selectedLog.response : JSON.stringify(selectedLog?.response, null, 2)) 
                     }} 
@@ -373,8 +439,17 @@ export default function LogsPage({
                   <div className="mt-3 pt-3 border-t">
                     <span className="text-muted-foreground text-xs">Schema</span>
                     <div 
-                      className="mt-1 bg-muted/30 p-2 rounded-md border text-xs overflow-auto max-h-20 font-mono whitespace-pre syntax-highlight"
+                      className="mt-1 bg-muted/30 p-2 rounded-md border text-xs font-mono whitespace-pre syntax-highlight"
                       dangerouslySetInnerHTML={{ __html: syntaxHighlight(JSON.stringify(selectedLog.metadata.schema, null, 2)) }}
+                    />
+                  </div>
+                )}
+                {selectedLog?.response_meta && (
+                  <div className="mt-3 pt-3 border-t">
+                    <span className="text-muted-foreground text-xs">Response Meta</span>
+                    <div 
+                      className="mt-1 bg-muted/20 p-2 rounded-md border border-dashed text-xs font-mono whitespace-pre syntax-highlight text-muted-foreground"
+                      dangerouslySetInnerHTML={{ __html: syntaxHighlight(JSON.stringify(selectedLog.response_meta, null, 2)) }}
                     />
                   </div>
                 )}

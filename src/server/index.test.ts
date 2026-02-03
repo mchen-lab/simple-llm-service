@@ -11,13 +11,7 @@ vi.mock("./db.js", () => ({
   getUniqueTags: vi.fn(() => []),
 }));
 
-// Mock the pythonManager
-vi.mock("./pythonManager.js", () => ({
-  pythonManager: {
-    start: vi.fn(),
-    stop: vi.fn(),
-  },
-}));
+
 
 describe("Simple LLM Service API", () => {
   describe("Health and Status Endpoints", () => {

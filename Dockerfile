@@ -42,8 +42,7 @@ FROM node:20-alpine AS production
 ARG TARGETARCH
 
 # Install basic tools
-# Install basic tools and python
-RUN apk add --no-cache ca-certificates python3 py3-pip
+RUN apk add --no-cache ca-certificates
 
 WORKDIR /app
 
@@ -58,13 +57,6 @@ COPY libs ./libs
 
 # Install only production dependencies
 RUN npm ci --only=production
-
-# Setup Python Service
-COPY python_service ./python_service
-# Create a venv equivalent or just install system wide in container? Alpine py3-pip installs to system.
-# Use --break-system-packages if needed on newer pip, or just rely on apk packages if possible.
-# But simplest is pip install requirements. 
-RUN pip3 install --no-cache-dir -r python_service/requirements.txt --break-system-packages
 
 # Copy built assets from builder
 COPY --from=builder /app/dist ./dist

@@ -24,6 +24,7 @@ export function initDb() {
       duration_ms REAL,
       error TEXT,
       metadata TEXT,
+      response_meta TEXT,
       locked BOOLEAN DEFAULT 0,
       tag TEXT
     )
@@ -32,6 +33,7 @@ export function initDb() {
   // Migrations could go here
   try { db.exec('ALTER TABLE logs ADD COLUMN locked BOOLEAN DEFAULT 0'); } catch (e) {}
   try { db.exec('ALTER TABLE logs ADD COLUMN tag TEXT'); } catch (e) {}
+  try { db.exec('ALTER TABLE logs ADD COLUMN response_meta TEXT'); } catch (e) {}
 }
 
 export interface LogEntry {
@@ -43,21 +45,23 @@ export interface LogEntry {
   duration_ms: number;
   error: string | null;
   metadata: any;
+  response_meta: any;
   locked: boolean;
   tag: string | null;
 }
 
 export function logCall(data: Omit<LogEntry, 'id' | 'timestamp' | 'locked'> & { timestamp?: string }) {
   const stmt = db.prepare(`
-    INSERT INTO logs (timestamp, model, prompt, response, duration_ms, error, metadata, locked, tag)
-    VALUES (@timestamp, @model, @prompt, @response, @duration_ms, @error, @metadata, 0, @tag)
+    INSERT INTO logs (timestamp, model, prompt, response, duration_ms, error, metadata, response_meta, locked, tag)
+    VALUES (@timestamp, @model, @prompt, @response, @duration_ms, @error, @metadata, @response_meta, 0, @tag)
   `);
   
   const info = stmt.run({
     ...data,
     timestamp: data.timestamp || new Date().toISOString(),
     response: JSON.stringify(data.response),
-    metadata: JSON.stringify(data.metadata || {})
+    metadata: JSON.stringify(data.metadata || {}),
+    response_meta: JSON.stringify(data.response_meta || {})
   });
   
   return info.lastInsertRowid;
@@ -94,6 +98,7 @@ export function getLogs(limit = 50, offset = 0, filters: { tag?: string, start_d
     ...row,
     response: parseJsonSafe(row.response),
     metadata: parseJsonSafe(row.metadata),
+    response_meta: parseJsonSafe(row.response_meta),
     locked: Boolean(row.locked)
   }));
 }
@@ -125,7 +130,7 @@ export function countLogs(filters: { tag?: string, start_date?: string, end_date
 }
 
 export function getUniqueTags(): string[] {
-  const rows = db.prepare('SELECT DISTINCT tag FROM logs WHERE tag IS NOT NULL AND tag != "" ORDER BY tag COLLATE NOCASE').all();
+  const rows = db.prepare("SELECT DISTINCT tag FROM logs WHERE tag IS NOT NULL AND tag != '' ORDER BY tag COLLATE NOCASE").all();
   return rows.map((r: any) => r.tag);
 }
 
