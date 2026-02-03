@@ -149,7 +149,7 @@ app.post("/api/generate", async (req: Request, res: Response) => {
         response_format,
         schema,
         tag,
-        providers: globalConfig.providers // Pass config to python
+        providers: (appKit.config as GlobalConfig).providers // Pass config to python
     };
 
     try {

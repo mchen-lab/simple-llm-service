@@ -8,10 +8,23 @@ import { Toaster } from "./components/ui/sonner";
 
 function App() {
   const [chatOpen, setChatOpen] = useState(false);
+  const [chatInitialPrompt, setChatInitialPrompt] = useState<string | undefined>();
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const handleRefresh = useCallback(() => {
     setRefreshTrigger(prev => prev + 1);
+  }, []);
+
+  const handleRerunFromLog = useCallback((prompt: string) => {
+    setChatInitialPrompt(prompt);
+    setChatOpen(true);
+  }, []);
+
+  const handleChatOpenChange = useCallback((open: boolean) => {
+    setChatOpen(open);
+    if (!open) {
+      setChatInitialPrompt(undefined);
+    }
   }, []);
 
   // Secondary bar with only Test button
@@ -34,17 +47,19 @@ function App() {
           <LogsPage
             refreshTrigger={refreshTrigger}
             onRefresh={handleRefresh}
+            onRerun={handleRerunFromLog}
           />
         </div>
       </Layout>
       
       <ChatModal 
         open={chatOpen} 
-        onOpenChange={setChatOpen} 
+        onOpenChange={handleChatOpenChange} 
         onSuccess={() => {
           handleRefresh();
           window.dispatchEvent(new CustomEvent("refresh-logs"));
-        }} 
+        }}
+        initialPrompt={chatInitialPrompt}
       />
 
       <Toaster />

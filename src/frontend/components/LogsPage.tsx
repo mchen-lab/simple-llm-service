@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import api from "@/lib/api";
-import { Eye, Trash2, Pin, RotateCw, Loader2 } from "lucide-react";
+import { Eye, Trash2, Pin, RotateCw } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,12 +13,6 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
-import {
   Table,
   TableBody,
   TableCell,
@@ -26,13 +20,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { LogFilterBar } from "./LogFilterBar";
 
@@ -59,11 +46,13 @@ interface PaginationData {
 interface LogsPageProps {
   refreshTrigger?: number;
   onRefresh?: () => void;
+  onRerun?: (prompt: string) => void;
 }
 
 export default function LogsPage({
   refreshTrigger = 0,
   onRefresh,
+  onRerun,
 }: LogsPageProps) {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -77,13 +66,6 @@ export default function LogsPage({
   
   // Detail modal state
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
-  
-  // Rerun state
-  const [rerunModel, setRerunModel] = useState("");
-  const [rerunFormat, setRerunFormat] = useState<"text" | "dict">("text");
-  const [rerunPrompt, setRerunPrompt] = useState("");
-  const [availableModels, setAvailableModels] = useState<string[]>([]);
-  const [rerunLoading, setRerunLoading] = useState(false);
   
   // Purge dialog state
   const [purgeOpen, setPurgeOpen] = useState(false);
@@ -155,37 +137,11 @@ export default function LogsPage({
     }
   };
 
-  const fetchAvailableModels = useCallback(async () => {
-    try {
-      const res = await api.get("/api/settings");
-      const names = res.data.model_names || "";
-      const models = names.split(/[\n,]+/).map((m: string) => m.trim()).filter((m: string) => m !== "");
-      setAvailableModels(models);
-    } catch (err) {
-      console.error("Failed to fetch models", err);
-    }
-  }, []);
-
-  const handleRerun = async () => {
-    if (!selectedLog || !rerunModel || !rerunPrompt.trim()) return;
-    setRerunLoading(true);
-    try {
-      await api.post("/api/generate", {
-        model: rerunModel,
-        prompt: rerunPrompt,
-        tag: selectedLog.tag || undefined,
-        response_format: rerunFormat,
-        schema: rerunFormat === "dict" && selectedLog.metadata?.schema 
-          ? JSON.stringify(selectedLog.metadata.schema) 
-          : undefined,
-      });
+  const handleRerunClick = () => {
+    if (selectedLog && onRerun) {
+      const prompt = selectedLog.prompt;
       setSelectedLog(null);
-      fetchLogs(page);
-      onRefresh?.();
-    } catch (err) {
-      console.error("Failed to rerun", err);
-    } finally {
-      setRerunLoading(false);
+      onRerun(prompt);
     }
   };
 
@@ -217,23 +173,6 @@ export default function LogsPage({
   useEffect(() => {
     fetchTags();
   }, [fetchTags]);
-
-  // Listen for external refresh events
-  useEffect(() => {
-    const handleExternalRefresh = () => fetchLogs(page);
-    window.addEventListener("refresh-logs", handleExternalRefresh);
-    return () => window.removeEventListener("refresh-logs", handleExternalRefresh);
-  }, [fetchLogs, page]);
-
-  // Fetch models and initialize rerun state when dialog opens
-  useEffect(() => {
-    if (selectedLog) {
-      fetchAvailableModels();
-      setRerunModel(selectedLog.model);
-      setRerunFormat(selectedLog.metadata?.format === 'dict' ? 'dict' : 'text');
-      setRerunPrompt(selectedLog.prompt);
-    }
-  }, [selectedLog, fetchAvailableModels]);
 
   return (
     <div className="flex flex-col h-full">
@@ -362,9 +301,9 @@ export default function LogsPage({
       </div>
 
       {/* Log Detail Modal */}
-      <Dialog open={!!selectedLog} onOpenChange={(open) => !open && setSelectedLog(null)}>
-        <DialogContent className="max-w-3xl h-[55vh] flex flex-col p-0 overflow-hidden">
-          <DialogHeader className="px-6 pt-6 pb-0">
+      <Dialog open={!!selectedLog} onOpenChange={(open: boolean) => !open && setSelectedLog(null)}>
+        <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="px-6 pt-6 pb-3 border-b">
             <DialogTitle className="flex items-center justify-between">
               <span>Log Detail</span>
               <span className="text-xs font-normal text-muted-foreground mr-8">
@@ -376,122 +315,82 @@ export default function LogsPage({
             </DialogDescription>
           </DialogHeader>
           
-          <Tabs defaultValue="prompt" className="flex-1 flex flex-col overflow-hidden">
-            <div className="px-6 border-b">
-              <TabsList className="w-full justify-start h-9 bg-transparent p-0 gap-6">
-                <TabsTrigger value="prompt" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 h-9 text-sm">Prompt</TabsTrigger>
-                <TabsTrigger value="response" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 h-9 text-sm">
-                  {selectedLog?.error ? 'Error' : 'Response'}
-                </TabsTrigger>
-                <TabsTrigger value="meta" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 h-9 text-sm">Meta</TabsTrigger>
-              </TabsList>
+          {/* Scrollable Content Area */}
+          <div className="flex-1 overflow-auto px-6 py-4 space-y-4">
+            {/* Prompt Box */}
+            <div className="space-y-2">
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Prompt</span>
+              <div className="bg-muted/30 p-3 rounded-lg border font-mono text-sm whitespace-pre-wrap max-h-48 overflow-auto">
+                {selectedLog?.prompt}
+              </div>
             </div>
 
-            <div className="flex-1 overflow-hidden px-6 py-4">
-              <TabsContent value="prompt" className="h-full m-0">
-                <textarea 
-                  className="h-full w-full overflow-auto bg-muted/30 p-3 rounded-lg border font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  value={rerunPrompt}
-                  onChange={(e) => setRerunPrompt(e.target.value)}
-                  placeholder="Enter prompt..."
-                />
-              </TabsContent>
-
-              <TabsContent value="response" className="h-full m-0">
-                <div className={cn(
-                  "h-full overflow-auto p-3 rounded-lg border font-mono text-sm whitespace-pre",
-                  selectedLog?.error ? "bg-destructive/5 text-destructive border-destructive/20" : "bg-muted/30"
-                )}>
-                  {selectedLog?.error ? (
-                    <div className="whitespace-pre-wrap">{selectedLog.error}</div>
-                  ) : (
-                    <div 
-                      className="syntax-highlight"
-                      dangerouslySetInnerHTML={{ 
-                        __html: syntaxHighlight(typeof selectedLog?.response === 'string' ? selectedLog.response : JSON.stringify(selectedLog?.response, null, 2)) 
-                      }} 
-                    />
-                  )}
-                </div>
-              </TabsContent>
-
-              <TabsContent value="meta" className="h-full m-0 overflow-auto">
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-0.5">
-                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Model</span>
-                      <p className="font-medium text-sm">{selectedLog?.model}</p>
-                    </div>
-                    <div className="space-y-0.5">
-                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Execution Time</span>
-                      <p className="font-medium text-sm">{selectedLog?.duration_ms?.toFixed(0) ?? 'N/A'}ms</p>
-                    </div>
-                    <div className="space-y-0.5">
-                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Token Usage</span>
-                      <p className="font-medium text-sm">{selectedLog?.metadata?.usage?.total_tokens ?? 'N/A'}</p>
-                    </div>
-                    <div className="space-y-0.5">
-                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Response Format</span>
-                      <p className="font-medium text-sm text-blue-500">{selectedLog?.metadata?.format === 'dict' ? 'gen_dict' : 'gen_text'}</p>
-                    </div>
-                  </div>
-
-                  {selectedLog?.metadata?.schema && (
-                    <div className="space-y-1">
-                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">JSON Schema</span>
-                      <div 
-                        className="bg-muted/30 p-2 rounded-md border text-xs overflow-auto max-h-24 font-mono whitespace-pre syntax-highlight"
-                        dangerouslySetInnerHTML={{ __html: syntaxHighlight(JSON.stringify(selectedLog.metadata.schema, null, 2)) }}
-                      />
-                    </div>
-                  )}
-                </div>
-              </TabsContent>
-            </div>
-          </Tabs>
-          
-          {/* Model/Format Selection Row */}
-          <div className="px-6 py-3 border-t flex items-center gap-2">
-            <Select value={rerunModel} onValueChange={setRerunModel}>
-              <SelectTrigger className="h-8 w-[240px] text-xs">
-                <SelectValue placeholder="Select model" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableModels.length > 0 ? (
-                  availableModels.map((m) => (
-                    <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>
-                  ))
+            {/* Response/Error Box */}
+            <div className="space-y-2">
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                {selectedLog?.error ? 'Error' : 'Response'}
+              </span>
+              <div className={cn(
+                "p-3 rounded-lg border font-mono text-sm whitespace-pre-wrap max-h-64 overflow-auto",
+                selectedLog?.error ? "bg-destructive/5 text-destructive border-destructive/20" : "bg-muted/30"
+              )}>
+                {selectedLog?.error ? (
+                  selectedLog.error
                 ) : (
-                  <SelectItem value={rerunModel || ""} className="text-xs">
-                    {rerunModel || "No models configured"}
-                  </SelectItem>
+                  <div 
+                    className="syntax-highlight"
+                    dangerouslySetInnerHTML={{ 
+                      __html: syntaxHighlight(typeof selectedLog?.response === 'string' ? selectedLog.response : JSON.stringify(selectedLog?.response, null, 2)) 
+                    }} 
+                  />
                 )}
-              </SelectContent>
-            </Select>
-            <Select value={rerunFormat} onValueChange={(v) => setRerunFormat(v as "text" | "dict")}>
-              <SelectTrigger className="h-8 w-[100px] text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="text" className="text-xs">gen_text</SelectItem>
-                <SelectItem value="dict" className="text-xs">gen_dict</SelectItem>
-              </SelectContent>
-            </Select>
+              </div>
+            </div>
+
+            {/* Metadata Box */}
+            <div className="space-y-2">
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Metadata</span>
+              <div className="bg-muted/20 p-3 rounded-lg border">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <span className="text-muted-foreground text-xs">Model</span>
+                    <p className="font-medium truncate">{selectedLog?.model}</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground text-xs">Duration</span>
+                    <p className="font-medium">{selectedLog?.duration_ms?.toFixed(0) ?? 'N/A'}ms</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground text-xs">Tokens</span>
+                    <p className="font-medium">{selectedLog?.metadata?.usage?.total_tokens ?? 'N/A'}</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground text-xs">Format</span>
+                    <p className="font-medium text-blue-500">{selectedLog?.metadata?.format === 'dict' ? 'gen_dict' : 'gen_text'}</p>
+                  </div>
+                </div>
+                {selectedLog?.metadata?.schema && (
+                  <div className="mt-3 pt-3 border-t">
+                    <span className="text-muted-foreground text-xs">Schema</span>
+                    <div 
+                      className="mt-1 bg-muted/30 p-2 rounded-md border text-xs overflow-auto max-h-20 font-mono whitespace-pre syntax-highlight"
+                      dangerouslySetInnerHTML={{ __html: syntaxHighlight(JSON.stringify(selectedLog.metadata.schema, null, 2)) }}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           <DialogFooter className="px-6 py-3 border-t flex-row items-center justify-between sm:justify-between">
             <Button 
               size="sm"
-              onClick={handleRerun} 
-              disabled={rerunLoading || !rerunModel}
+              onClick={handleRerunClick} 
+              disabled={!onRerun}
               className="gap-1.5"
             >
-              {rerunLoading ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <RotateCw className="h-3.5 w-3.5" />
-              )}
-              Rerun
+              <RotateCw className="h-3.5 w-3.5" />
+              Rerun in Chat
             </Button>
             <Button variant="outline" size="sm" onClick={() => setSelectedLog(null)}>Close</Button>
           </DialogFooter>

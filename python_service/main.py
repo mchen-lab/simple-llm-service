@@ -141,6 +141,8 @@ async def generate(req: GenerateRequest):
         return {"status": "success", "data": result, "usage": usage}
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
