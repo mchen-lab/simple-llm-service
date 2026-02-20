@@ -1,0 +1,115 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Simple LLM Service",
+    "description": "LLM text and structured-data generation service. Supports multiple providers (OpenRouter, Ollama, etc.) and both plain text (gen_text) and structured JSON output (gen_dict) via string-schema.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:31160",
+      "description": "Simple LLM Service"
+    }
+  ],
+  "paths": {
+    "/api/generate": {
+      "post": {
+        "operationId": "generate",
+        "summary": "Generate text or structured data with an LLM",
+        "description": "Call an LLM to generate a response. For plain text output, omit 'schema' and 'response_format'. For structured JSON output (gen_dict), provide a 'schema' string in string-schema format (e.g. 'title:str, score:int, tags:[str]'). The response for gen_text is a JSON-encoded string; for gen_dict it is {data: {...}, response_meta: {...}}. Use 'tag' to label calls for logging/analytics.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Generation result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerateResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "LLM or server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "GenerateRequest": {
+        "type": "object",
+        "required": ["prompt"],
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "The prompt / instruction to send to the LLM"
+          },
+          "model": {
+            "type": "string",
+            "description": "Model identifier (e.g. 'google/gemini-2.0-flash-exp:free', 'ollama/llama3', 'gpt-4o'). Defaults to the service's configured default model.",
+            "default": "google/gemini-2.0-flash-exp:free"
+          },
+          "schema": {
+            "type": "string",
+            "description": "String-schema definition for structured output (gen_dict mode). Example: 'title:str, score:int(0-10), tags:[str]'. When provided, response is a structured JSON object matching this schema."
+          },
+          "response_format": {
+            "type": "string",
+            "enum": ["text", "json"],
+            "description": "Explicit response format override. Usually inferred from presence of 'schema'."
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["auto", "json", "tools"],
+            "default": "auto",
+            "description": "Structured output mode: 'auto' picks best for provider, 'json' uses JSON mode, 'tools' uses function calling."
+          },
+          "tag": {
+            "type": "string",
+            "description": "Optional label for this call, used for grouping in logs and analytics."
+          }
+        }
+      },
+      "GenerateResponse": {
+        "type": "object",
+        "description": "For gen_text: the response IS the JSON-encoded string directly. For gen_dict: {data: <object>, response_meta: {model, tokens_in, tokens_out, duration_ms}}",
+        "properties": {
+          "data": {
+            "description": "Structured output object (only present in gen_dict mode, matches provided schema)"
+          },
+          "response_meta": {
+            "type": "object",
+            "description": "Token usage and model metadata (only present in gen_dict mode)",
+            "properties": {
+              "model": { "type": "string" },
+              "tokens_in": { "type": "integer" },
+              "tokens_out": { "type": "integer" },
+              "duration_ms": { "type": "number" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

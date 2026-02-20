@@ -5,10 +5,31 @@ import axios from "axios";
 import path from "path";
 import { createServer } from "http";
 import { fileURLToPath } from "url";
+import fs from "fs";
 import { initDb, logCall, getLogs, countLogs, getUniqueTags } from "./db.js";
 import { llmService } from "./llmManager.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Load OpenAPI spec (once at startup, non-fatal if missing)
+let openapiSpec: Record<string, unknown> = {};
+try {
+  const candidates = [
+    path.resolve(__dirname, "../../openapi.json"),   // from src/server/ (dev)
+    path.resolve(process.cwd(), "openapi.json"),     // from project root
+    path.resolve(__dirname, "../../../openapi.json"), // from dist/server/ (prod)
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) {
+      openapiSpec = JSON.parse(fs.readFileSync(p, "utf-8"));
+      console.log(`📄 Loaded OpenAPI spec from ${p}`);
+      break;
+    }
+  }
+  if (!openapiSpec.openapi) console.warn("⚠️  OpenAPI spec not found at any candidate path");
+} catch (err) {
+  console.warn(`⚠️  Failed to load OpenAPI spec: ${(err as Error).message}`);
+}
 
 // 1. Config Interface
 interface GlobalConfig {
@@ -54,6 +75,9 @@ initDb();
 // Python service removed in favor of direct Node.js implementation
 
 // 3. API Routes
+
+// OpenAPI spec
+app.get("/api/openapi.json", (_req: Request, res: Response) => res.json(openapiSpec));
 
 // Settings API
 app.get("/api/settings", (_req: Request, res: Response) => {

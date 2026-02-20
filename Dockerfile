@@ -61,6 +61,7 @@ RUN npm ci --only=production
 # Copy built assets from builder
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/dist-server ./dist-server
+COPY --from=builder /app/openapi.json ./openapi.json
 
 # Expose port
 EXPOSE 31160
